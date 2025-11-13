@@ -2,6 +2,72 @@
 
 This template should help get you started developing with Svelte in Vite.
 
+## How to Get Started
+
+### Prerequisites
+
+- Node.js (v16 or higher recommended)
+- npm (comes with Node.js)
+
+### Installation
+
+1. Clone or download this repository
+2. Install dependencies:
+```bash
+npm install
+```
+
+### Running the Application
+
+#### Development Mode (Web)
+
+To run the Svelte app in development mode with hot module replacement:
+
+```bash
+npm run dev
+```
+
+This will start the Vite development server at `http://localhost:5173`
+
+#### Development Mode (Electron)
+
+To run the Electron app in development mode:
+
+```bash
+npm run electron:dev
+```
+
+This will:
+- Start the Vite development server
+- Launch the Electron app once the server is ready
+- Enable hot module replacement for both the web app and Electron
+
+#### Building for Production
+
+To build the application for production:
+
+```bash
+npm run build
+```
+
+This creates an optimized production build in the `dist` directory.
+
+#### Building Electron App
+
+To build a distributable Electron app:
+
+```bash
+npm run electron:build
+```
+
+This will build the web app and create an Electron installer in the `release` directory.
+
+To create an unpacked build (for testing):
+
+```bash
+npm run electron:pack
+```
+
 ## Recommended IDE Setup
 
 [VS Code](https://code.visualstudio.com/) + [Svelte](https://marketplace.visualstudio.com/items?itemName=svelte.svelte-vscode).
