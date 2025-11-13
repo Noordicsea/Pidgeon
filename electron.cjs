@@ -1,10 +1,14 @@
 const { app, BrowserWindow, ipcMain } = require('electron');
 const { join } = require('path');
-const { existsSync, appendFileSync } = require('fs');
+const { existsSync, appendFileSync, unlinkSync } = require('fs');
+const { initDatabase, closeDatabase } = require('./database/db.cjs');
+const { registerUser, loginUser, getCurrentSession, logoutUser } = require('./database/auth.cjs');
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 
 let mainWindow = null;
+let dbInitialized = false;
+const shouldResetDb = process.argv.includes('-resetdb');
 
 // Fix cache issues on Windows - configure cache directory
 if (process.platform === 'win32') {
@@ -220,7 +224,91 @@ ipcMain.handle('window-is-maximized', () => {
   return mainWindow ? mainWindow.isMaximized() : false;
 });
 
-app.whenReady().then(() => {
+// IPC handler to check database initialization status
+ipcMain.handle('db-is-ready', async () => {
+  if (!dbInitialized) {
+    try {
+      const result = await initializeDatabase();
+      if (result) {
+        return { success: true, error: null };
+      } else {
+        return { success: false, error: 'Database initialization failed. Check console for details.' };
+      }
+    } catch (error) {
+      console.error('Error in db-is-ready handler:', error);
+      return { success: false, error: `Database initialization error: ${error.message || 'Unknown error'}` };
+    }
+  }
+  return { success: true, error: null };
+});
+
+// Initialize database function (now async)
+async function initializeDatabase() {
+  if (dbInitialized) {
+    return true;
+  }
+  
+  try {
+    console.log('Starting database initialization...');
+    console.log('App userData path:', app.getPath('userData'));
+    initDatabase(null, app);
+    dbInitialized = true;
+    console.log('Database initialized successfully');
+    return true;
+  } catch (error) {
+    console.error('Failed to initialize database:', error);
+    console.error('Error message:', error.message);
+    console.error('Error stack:', error.stack);
+    dbInitialized = false;
+    // Re-throw to allow caller to handle
+    throw error;
+  }
+}
+
+app.whenReady().then(async () => {
+  // Handle -resetdb command-line argument (after app is ready)
+  if (shouldResetDb) {
+    // Close database if it's already initialized
+    if (dbInitialized) {
+      try {
+        closeDatabase();
+        dbInitialized = false;
+      } catch (error) {
+        console.error('Error closing database:', error);
+      }
+    }
+    
+    // Get the database path
+    let databasePath;
+    try {
+      const userDataPath = app.getPath('userData');
+      databasePath = join(userDataPath, 'database.db');
+    } catch (error) {
+      // Fallback if getPath fails
+      databasePath = join(__dirname, 'database.db');
+    }
+    
+    // Delete database file if it exists
+    if (existsSync(databasePath)) {
+      try {
+        unlinkSync(databasePath);
+        console.log('Database file deleted. Schema will be recreated on next initialization.');
+      } catch (error) {
+        console.error('Error deleting database file:', error);
+      }
+    } else {
+      console.log('Database file not found. Nothing to delete.');
+    }
+  }
+  
+  // Initialize database before creating window or registering IPC handlers
+  try {
+    await initializeDatabase();
+  } catch (error) {
+    // Database initialization failed, but continue - frontend will retry via IPC
+    console.error('Initial database initialization failed, will retry on demand:', error);
+  }
+
   // Set cache path after app is ready (more reliable)
   if (process.platform === 'win32') {
     try {
@@ -256,9 +344,80 @@ app.on('window-all-closed', () => {
   }
 });
 
+// IPC handlers for authentication
+// Ensure database is initialized before handling requests
+ipcMain.handle('auth-register', async (event, { email, password, name }) => {
+  if (!dbInitialized) {
+    const initialized = await initializeDatabase();
+    if (!initialized) {
+      return { success: false, error: 'Database initialization failed' };
+    }
+  }
+  try {
+    const user = await registerUser({ email, password, name });
+    return { success: true, user };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('auth-login', async (event, { email, password }) => {
+  if (!dbInitialized) {
+    const initialized = await initializeDatabase();
+    if (!initialized) {
+      return { success: false, error: 'Database initialization failed' };
+    }
+  }
+  try {
+    const result = await loginUser({ email, password });
+    return { success: true, ...result };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('auth-get-session', async (event, sessionId) => {
+  if (!dbInitialized) {
+    const initialized = await initializeDatabase();
+    if (!initialized) {
+      return { success: false, error: 'Database initialization failed' };
+    }
+  }
+  try {
+    const session = getCurrentSession(sessionId);
+    if (session) {
+      return { success: true, ...session };
+    }
+    return { success: false, error: 'No active session' };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('auth-logout', async (event, sessionId) => {
+  if (!dbInitialized) {
+    const initialized = await initializeDatabase();
+    if (!initialized) {
+      return { success: false, error: 'Database initialization failed' };
+    }
+  }
+  try {
+    const success = logoutUser(sessionId);
+    return { success };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
 // Clean up on exit
 app.on('before-quit', () => {
   if (consoleWindow && !consoleWindow.isDestroyed()) {
     consoleWindow.close();
+  }
+  // Close database connection
+  try {
+    closeDatabase();
+  } catch (error) {
+    // Ignore errors during shutdown
   }
 });

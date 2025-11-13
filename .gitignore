@@ -32,3 +32,13 @@ out
 *.njsproj
 *.sln
 *.sw?
+
+# Database files (actual database instances, not schema files)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+database.db
+database.db-journal
+database.db-wal
+database.db-shm
